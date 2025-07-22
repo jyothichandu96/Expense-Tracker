@@ -1,0 +1,364 @@
+# Expense-Tracker
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Expense Tracker</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to the top */
+            min-height: 100vh;
+            padding: 1rem; /* Add some padding around the content */
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 1rem; /* More rounded corners */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 1.5rem;
+            width: 100%;
+            max-width: 480px; /* Max width for better mobile experience */
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        input[type="text"], input[type="number"], input[type="date"] {
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 0.75rem 1.25rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: #ffffff;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca;
+        }
+        .btn-danger {
+            background-color: #ef4444;
+            color: #ffffff;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+        .expense-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .expense-item:last-child {
+            border-bottom: none;
+        }
+        .expense-details {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        .expense-description {
+            font-weight: 500;
+            color: #1f2937;
+        }
+        .expense-date {
+            font-size: 0.875rem;
+            color: #6b7280;
+        }
+        .expense-amount {
+            font-weight: 600;
+            color: #10b981; /* Green for positive amounts */
+            margin-left: 1rem;
+        }
+        .total-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 1rem;
+            border-top: 2px solid #e5e7eb;
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #1f2937;
+        }
+        .user-id-display {
+            font-size: 0.75rem;
+            color: #6b7280;
+            text-align: center;
+            margin-top: 1rem;
+            word-break: break-all; /* Ensure long IDs wrap */
+        }
+        .message-box {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+            font-size: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center text-gray-800">Expense Tracker</h1>
+
+        <!-- Add Expense Section -->
+        <div class="flex flex-col gap-3">
+            <input type="text" id="expenseDescription" placeholder="Description (e.g., Groceries)" class="focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <input type="number" id="expenseAmount" placeholder="Amount (e.g., 25.50)" step="0.01" class="focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <input type="date" id="expenseDate" class="focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+            <button id="addExpenseBtn" class="btn-primary w-full">Add Expense</button>
+        </div>
+
+        <!-- Expenses List Section -->
+        <div>
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Your Expenses</h2>
+            <div id="expensesList" class="flex flex-col gap-2">
+                <!-- Expenses will be loaded here -->
+                <p class="text-gray-500 text-center" id="loadingMessage">Loading expenses...</p>
+            </div>
+        </div>
+
+        <!-- Total Expenses Section -->
+        <div class="total-section">
+            <span>Total:</span>
+            <span id="totalExpenses">$0.00</span>
+        </div>
+
+        <!-- User ID Display -->
+        <div class="user-id-display">
+            Your User ID: <span id="userIdDisplay">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Custom Message Box -->
+    <div id="messageBox" class="message-box"></div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app, db, auth, userId = null;
+        let isAuthReady = false; // Flag to indicate if authentication is complete
+
+        // Function to show custom message box
+        function showMessage(message, duration = 3000) {
+            const messageBox = document.getElementById('messageBox');
+            messageBox.textContent = message;
+            messageBox.style.display = 'block';
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, duration);
+        }
+
+        // Initialize Firebase and set up authentication
+        async function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Listen for auth state changes
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('userIdDisplay').textContent = userId;
+                        isAuthReady = true;
+                        console.log("Firebase Auth Ready. User ID:", userId);
+                        // Once authenticated, load expenses
+                        loadExpenses();
+                    } else {
+                        // Sign in anonymously if no user is logged in
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (error) {
+                            console.error("Error signing in:", error);
+                            showMessage("Error signing in. Please try again.");
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showMessage("Error initializing app. Please refresh.");
+            }
+        }
+
+        // Function to add an expense
+        async function addExpense() {
+            if (!isAuthReady) {
+                showMessage("App is still loading. Please wait.");
+                return;
+            }
+
+            const descriptionInput = document.getElementById('expenseDescription');
+            const amountInput = document.getElementById('expenseAmount');
+            const dateInput = document.getElementById('expenseDate');
+
+            const description = descriptionInput.value.trim();
+            const amount = parseFloat(amountInput.value);
+            const date = dateInput.value;
+
+            if (!description || isNaN(amount) || amount <= 0 || !date) {
+                showMessage("Please enter a valid description, amount, and date.");
+                return;
+            }
+
+            try {
+                // Store in private collection: /artifacts/{appId}/users/{userId}/expenses
+                const expensesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/expenses`);
+                await addDoc(expensesCollectionRef, {
+                    description: description,
+                    amount: amount,
+                    date: date,
+                    createdAt: new Date() // Timestamp for ordering
+                });
+                showMessage("Expense added successfully!");
+                descriptionInput.value = '';
+                amountInput.value = '';
+                dateInput.value = ''; // Clear date input as well
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showMessage("Error adding expense. Please try again.");
+            }
+        }
+
+        // Function to load and display expenses in real-time
+        function loadExpenses() {
+            if (!isAuthReady) {
+                console.log("Authentication not ready, cannot load expenses.");
+                return;
+            }
+
+            const expensesList = document.getElementById('expensesList');
+            const totalExpensesSpan = document.getElementById('totalExpenses');
+            const loadingMessage = document.getElementById('loadingMessage');
+
+            // Reference to the private expenses collection
+            const expensesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/expenses`);
+            const q = query(expensesCollectionRef); // No orderBy to avoid index issues
+
+            onSnapshot(q, (snapshot) => {
+                expensesList.innerHTML = ''; // Clear current list
+                let total = 0;
+                const expenses = [];
+
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    expenses.push({ id: doc.id, ...data });
+                });
+
+                // Sort expenses by date and then by createdAt (descending) in memory
+                expenses.sort((a, b) => {
+                    const dateA = new Date(a.date);
+                    const dateB = new Date(b.date);
+                    if (dateA.getTime() === dateB.getTime()) {
+                        // If dates are the same, sort by createdAt (most recent first)
+                        return b.createdAt.toDate().getTime() - a.createdAt.toDate().getTime();
+                    }
+                    return dateB.getTime() - dateA.getTime(); // Most recent date first
+                });
+
+                if (expenses.length === 0) {
+                    expensesList.innerHTML = '<p class="text-gray-500 text-center">No expenses added yet.</p>';
+                } else {
+                    expenses.forEach(expense => {
+                        const expenseItem = document.createElement('div');
+                        expenseItem.className = 'expense-item';
+                        expenseItem.innerHTML = `
+                            <div class="expense-details">
+                                <span class="expense-description">${expense.description}</span>
+                                <span class="expense-date">${expense.date}</span>
+                            </div>
+                            <span class="expense-amount">$${expense.amount.toFixed(2)}</span>
+                            <button class="btn-danger ml-4 px-3 py-1 text-sm rounded-md" data-id="${expense.id}">Delete</button>
+                        `;
+                        expensesList.appendChild(expenseItem);
+                        total += expense.amount;
+                    });
+                }
+
+                totalExpensesSpan.textContent = `$${total.toFixed(2)}`;
+                loadingMessage.style.display = 'none'; // Hide loading message once data is loaded
+            }, (error) => {
+                console.error("Error fetching expenses: ", error);
+                showMessage("Error loading expenses. Please try again.");
+                loadingMessage.textContent = 'Failed to load expenses.';
+            });
+        }
+
+        // Function to delete an expense
+        async function deleteExpense(id) {
+            if (!isAuthReady) {
+                showMessage("App is still loading. Please wait.");
+                return;
+            }
+            try {
+                // Reference to the specific expense document in the private collection
+                const expenseDocRef = doc(db, `artifacts/${appId}/users/${userId}/expenses`, id);
+                await deleteDoc(expenseDocRef);
+                showMessage("Expense deleted successfully!");
+            } catch (e) {
+                console.error("Error deleting document: ", e);
+                showMessage("Error deleting expense. Please try again.");
+            }
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeFirebase();
+
+            document.getElementById('addExpenseBtn').addEventListener('click', addExpense);
+
+            // Event delegation for delete buttons
+            document.getElementById('expensesList').addEventListener('click', (event) => {
+                if (event.target.classList.contains('btn-danger')) {
+                    const expenseId = event.target.dataset.id;
+                    if (expenseId) {
+                        deleteExpense(expenseId);
+                    }
+                }
+            });
+
+            // Set today's date as default for the date input
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0'); // Month is 0-indexed
+            const day = String(today.getDate()).padStart(2, '0');
+            document.getElementById('expenseDate').value = `${year}-${month}-${day}`;
+        });
+    </script>
+</body>
+</html>
